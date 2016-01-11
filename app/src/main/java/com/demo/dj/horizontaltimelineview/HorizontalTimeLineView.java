@@ -4,10 +4,9 @@ import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.RectF;
-import android.os.Handler;
-import android.os.Message;
 import android.text.TextUtils;
 import android.util.AttributeSet;
+import android.util.Log;
 import android.util.TypedValue;
 import android.view.MotionEvent;
 import android.view.VelocityTracker;
@@ -129,10 +128,6 @@ public class HorizontalTimeLineView extends View {
      */
     private float mMoveDist;
     /**
-     * 滑动的速度
-     */
-    private float mSpeed;
-    /**
      * 速度追踪
      */
     private VelocityTracker mVelocityTracker;
@@ -152,19 +147,6 @@ public class HorizontalTimeLineView extends View {
     public interface ITimeSetCallback {
         void onTimeSet(long timeInMillis);
     }
-
-    /**
-     * 处理惯性滑动
-     */
-    private Handler mHandler = new Handler() {
-        @Override
-        public void handleMessage(Message msg) {
-            //sliding
-            float interpolatedTime = (float) msg.obj;
-            updateNodesByTouch((1 - interpolatedTime) * mSpeed);
-            super.handleMessage(msg);
-        }
-    };
 
     public HorizontalTimeLineView(Context context) {
         super(context);
@@ -293,16 +275,6 @@ public class HorizontalTimeLineView extends View {
                 }
             }
         }
-
-        //当前时间
-//        RectF rectF = calcCurTimeRect();
-//        if (mCurTimeNode == null) {
-//            mCurTimeNode = new NodeInfo(rectF.centerX(), rectF.centerY(), 0, rectF, TYPE_SELECTED, System
-//                    .currentTimeMillis());
-//        } else {
-//            mCurTimeNode.setInfo(rectF.centerX(), rectF.centerY(), 0, rectF, TYPE_SELECTED, System
-// .currentTimeMillis());
-//        }
 
         if (mTimeSetCallback != null) {
             mTimeSetCallback.onTimeSet(mSelectedNode.time);
@@ -465,10 +437,11 @@ public class HorizontalTimeLineView extends View {
 
         switch (event.getAction()) {
             case MotionEvent.ACTION_DOWN:
-                stopScroll();
+                stopScroll();       //停止滑动
                 mDownX = event.getX();
                 mMoveDist = curX;
 
+                //取得velocityTracker实例
                 if (mVelocityTracker == null) {
                     mVelocityTracker = VelocityTracker.obtain();
                 } else {
@@ -486,14 +459,14 @@ public class HorizontalTimeLineView extends View {
                         mTimeSetCallback.onTimeSet(mSelectedNode.time);
                     }
                 } else {
-                    //滑动之后
+                    //手势滑动之后继续滚动
                     sliding();
                 }
                 break;
 
             case MotionEvent.ACTION_MOVE:
                 mVelocityTracker.addMovement(event);
-                mVelocityTracker.computeCurrentVelocity(10, MAX_SPEED);
+                mVelocityTracker.computeCurrentVelocity(10, MAX_SPEED);//计算速度
 
                 final float dx = curX - mDownX;
                 mDownX = curX;
@@ -512,22 +485,19 @@ public class HorizontalTimeLineView extends View {
      * 利用animation实现
      */
     private void sliding() {
-        mSpeed = mVelocityTracker.getXVelocity();
-
         if (mAnimation == null) {
             mAnimation = new Animation() {
                 @Override
                 protected void applyTransformation(float interpolatedTime, Transformation t) {
-                    Message msg = Message.obtain();
-                    msg.obj = interpolatedTime;
-                    mHandler.sendMessage(msg);
+                    float speed = mVelocityTracker.getXVelocity();
+                    updateNodesByTouch((1 - interpolatedTime) * speed);
                 }
             };
             mAnimation.setInterpolator(new DecelerateInterpolator());
         }
 
         stopScroll();
-        mAnimation.setDuration(mSpeed == MAX_SPEED ? 3000 : 2000);
+        mAnimation.setDuration(2000);
         startAnimation(mAnimation);
     }
 
@@ -648,23 +618,6 @@ public class HorizontalTimeLineView extends View {
 
         canvas.drawCircle(node.cx, node.cy, dp2px((int) node.radius), mNodePaint);
     }
-
-    /**
-     * 画当前时间节点
-     *
-     * @param canvas
-     * @param node
-     */
-    private void drawCurTimeNode(Canvas canvas, NodeInfo node) {
-        if (node == null || node.rect == null) {
-            return;
-        }
-
-        mNodePaint.setColor(getResources().getColor(YELLOW));
-        mNodePaint.setStyle(Paint.Style.FILL_AND_STROKE);
-        canvas.drawRect(node.rect, mNodePaint);
-    }
-
 
     /**
      * 画时间，位于横线下方
